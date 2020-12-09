@@ -1,0 +1,448 @@
+---
+title: "Georgia Election Map"
+author: "Kristle Chester"
+date: "November 22, 2020"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(maps)
+library(tidyverse)
+library(readxl)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(sf)
+library(spatstat)
+library(maptools) #Needed for as.owin
+library(kableExtra)
+library(scales)
+#library(purrr)
+#library(gganimate)
+#library(gifski)
+library(xml2)
+library(extrafont)
+
+
+
+# Load workspace with fonts
+load("fonts.Rdata")
+
+
+## setting working directory
+knitr::opts_knit$set(root.dir = "C:/Users/kcyar/OneDrive - The Index Writer, LLC/Medium/better_ga_map")
+
+```
+
+## Voter Density Matters
+
+```{r xml_load, echo=FALSE}
+
+load("turnout.rData")
+ 
+```
+
+## Map
+
+```{r map, echo=FALSE}
+load("ga_map.Rdata")
+load("ga_clean.Rdata")
+
+
+```
+
+```{r voter_pts, echo=FALSE, results = FALSE, message=FALSE, warning=FALSE}
+
+ # Generate points within precinct to represent voter density. Note, this uses Ballots_Cast, not Total_Votes due to the previous issues mentioned with Hall County. In truth,100% voter turnout is practically unheard. On election day, the results are all about who shows up. Who stays home makes a difference, but we're visualizing who showed up because that is the election result.
+
+# Generating a random point for each vote within a precinct takes about 1/2 an hour. There is no need to repeat this step everytime you knit the rmd file.
+
+# If the xml data changes, rerun create_voter_points.R.
+load("voter_points.Rdata")
+
+```
+
+
+```{r density, echo=FALSE}
+
+# All election_merge ga_map. Note, 2,656 precincts reported results for the 2020 general election. 
+
+all_merged <- ga_map %>%
+  st_as_sf()
+
+
+# R_MOV_BC = 100 is Red. R_MOV_BC = -100 is BLUE
+
+# Choropleth Maps
+this_rb <- c("blue4", "blue4", "blue3", "blue2", "#80a0ff", "#ff8080", "red2", "red3", "red4", "red4")
+
+# Alternate colors.
+
+#this_colorblind <- c("#431A53", "#572F67", "#6E477D", "#896996", "#AD97B6", "#76DB76", "#4CC94C", "#2CB72C", "#129C12", "#037C03")
+
+this_colorblind <- c("#037C03", "#129C12", "#2CB72C", "#4CC94C", "#76DB76", "#AD97B6", "#896996", "#6E477D", "#572F67", "#431A53")
+
+
+
+this_rescale <- c(
+  0,
+  0.175, # D 65 
+  0.33875, # D 32.25
+  0.419375, # D 16.125
+  0.4975, # D 0.5
+  0.5025, # R 0.5
+  0.580625, # R 16.125
+  0.66125, # R 32.25
+  0.825, # R 65
+  1
+)
+#this_rescale <- c(-70, -50, -25, -5, -3, 0, 3, 5, 25, 50, 70)
+this_break <- c(
+ # 0.1, # blue4
+  0.175, # D 65
+  0.3, # D 40
+  0.425, # D 15
+  0.575,# #R 15
+  0.7, # R 40
+  0.825#, # r 65
+  #0.9# red4
+  )
+party_labels <- c("D +65", "D +40", "D +15", "R +15", "R +40", "R +65")
+this_no_party <- c("B +65", "B +40", "B +15", "A +15", "A +40", "A +65")
+
+choro_map <- function(this_color, map_colors, this_labels, this_title, this_subtitle) {
+  
+  this_color_test <- deparse(substitute(this_color))
+
+  if(this_color_test == "all_merged") {
+    outlines = NA
+  } else {
+    outlines = "gray30"
+  }
+
+  ga_color <- ggplot()
+
+  ga_color + geom_sf(data=ga_clean, fill="gray30", color="gray30", size=1.1) +
+    geom_sf(data=this_color, aes(fill=R_MOV_RDL_COLOR),  color=outlines, size=0.5, stroke = 0, shape=20) +
+    scale_fill_gradientn(colors=map_colors, breaks=this_break, labels=this_labels, values = scales::rescale(this_rescale), limits = c(0.0, 1.0)) +
+    labs(title=this_title, subtitle=this_subtitle) +
+    theme_void() +
+    theme(legend.title =  element_blank(),
+          legend.text = element_text(size=18, color="gray30", family="Noto Sans"),
+          plot.title = element_text(hjust = 0.5, size = 35, family="Noto Sans"),
+          plot.subtitle = element_text(hjust = 0.5, size = 30, color="gray30", vjust = -1, face="italic", family="Noto Sans")
+          ) +
+    guides(fill = guide_colourbar(barwidth=2, barheight = 20, ticks.linewidth = 3.5))
+}
+
+##  Precinct Map.
+
+ga_pre_map <- choro_map(all_merged, this_rb, party_labels, "Georgia General Election 2020", "Presidential by Precinct")
+ggsave("output/ga_precinct_choropleth.png", ga_pre_map, width = 14, height=14, units="in")
+
+## County Map
+ga_all_county_map <- choro_map(ga_county_map, this_rb, party_labels, "Georgia General Election 2020", "Presidential by County")
+ggsave("output/ga_county_choropleth.png", ga_all_county_map, width = 14, height=14, units="in")
+
+# Colorblind Palette
+##  Precinct Map.
+
+ga_pre_map_cb <- choro_map(all_merged, this_colorblind, this_no_party, "Some Random Election in Georgia", "By Precinct")
+ggsave("output/ga_precinct_choropleth_cb.png", ga_pre_map_cb, width = 14, height=14, units="in")
+
+## County Map
+ga_all_county_map_cb <- choro_map(ga_county_map, this_colorblind, this_no_party, "Some Random Election in Georgia", "By County")
+ggsave("output/ga_county_choropleth_cb.png", ga_all_county_map_cb, width = 14, height=14, units="in")
+
+
+```
+
+```{r density_mapping, echo=FALSE}
+
+voter_dot_map <- function(scale, map_colors, this_labels, this_title, this_subtitle) {
+  
+  
+  # Extract x y coordinates
+  voter_dots_coord <- st_coordinates(scale)
+# Bind the data back together
+
+  voter_dots_xy <- cbind(scale, voter_dots_coord)
+
+# Vote Density at 100 voters per dot.
+
+  ga_density <- ggplot()
+
+  ga_density + geom_sf(data=ga_clean, fill="white", color="gray30", size=1.1) +
+    geom_point(data=voter_dots_xy, aes(X, Y, color=R_MOV_RDL_COLOR), size=0.5, stroke = 0, shape=20) +
+    scale_color_gradientn(colors=map_colors, breaks=this_break, labels=this_labels, scales::rescale(this_rescale), limits = c(0.0, 1.0)) +
+    labs(title=this_title, subtitle=this_subtitle, color="Margin of Victory") +
+    theme_void() +
+    theme(legend.title =  element_blank(),
+          legend.text = element_text(size=18, color="gray30", family="Noto Sans"),
+          plot.title = element_text(hjust = 0.5, size = 35, family="Noto Sans"),
+          plot.subtitle = element_text(hjust = 0.5, size = 30, color="gray30", vjust = -1, face="italic", family="Noto Sans")
+          ) +
+    guides(color = guide_colourbar(barwidth=2, barheight = 20, ticks.linewidth = 3.5))
+}
+
+#guide = guide_legend(keyheight=2)
+
+#ga_map_voter_100 <- voter_dot_map(voter_dots_100)
+
+#ggsave("output/voter_density_100.png", ga_map_voter_100)
+
+#ga_map_voter_50 <- voter_dot_map(voter_dots_50)
+#ggsave("output/voter_density_50.png", ga_map_voter_50)
+
+#ga_map_voter_25 <- voter_dot_map(voter_dots_25)
+#ggsave("output/voter_density_25.png" ,ga_map_voter_25)
+
+ga_map_voter_10 <- voter_dot_map(voter_dots_10, this_rb, party_labels, "Georgia General Election 2020", "Presidential")
+
+ggsave("output/voter_density_10.png", ga_map_voter_10, width = 14, height=14, units="in")
+
+#ga_map_voter_1 <- voter_dot_map(voter_dots_1)
+#ggsave("output/voter_density_all.png", ga_map_voter_1, width = 46, height=46, units="in")
+
+# Colorblind
+ga_map_voter_10_cb <- voter_dot_map(voter_dots_10, this_colorblind, this_no_party, "Some Random Election in Georgia", "")
+
+ggsave("output/voter_density_10_cb.png", ga_map_voter_10_cb, width = 14, height=14, units="in")
+
+```
+
+```{r add_stats, echo=FALSE}
+
+percentile_90 <- election_merge %>%
+  filter(Total_Voters >= quantile(Total_Voters, 0.9))
+total_voters_90 <- format(sum(percentile_90$Total_Voters), scientific=FALSE)
+
+
+percentile_95 <- election_merge %>%
+  filter(Total_Voters >= quantile(Total_Voters, 0.95))
+total_voters_95 <- format(sum(percentile_95$Total_Voters), scientific=FALSE)
+
+
+percentile_98 <- election_merge %>%
+  filter(Total_Voters >= quantile(Total_Voters, 0.98))
+total_voters_98 <- format(sum(percentile_98$Total_Voters), scientific=FALSE)
+
+
+percentile_99 <- election_merge %>%
+  filter(Total_Voters >= quantile(Total_Voters, 0.99))
+total_voters_99 <- format(sum(percentile_99$Total_Voters), scientific=FALSE)
+
+
+r_election_merge <- election_merge %>%
+  filter(R_Percentage_BC > D_Percentage_BC)
+
+r_undervote <- sum(r_election_merge$Undervotes)
+
+d_election_merge <- election_merge %>%
+  filter(D_Percentage_BC > R_Percentage_BC)
+
+d_undervote<- sum(d_election_merge$Undervotes)
+
+diff_r_d_undervote <- r_undervote - d_undervote 
+
+neutral_election_merge <- election_merge %>%
+  filter(D_Percentage_BC == R_Percentage_BC)
+
+calc_undervote_sub <- function(party, x, y) {
+  
+  if(party == "d") {
+    this_election_filter <- election_merge %>%
+    filter(x < D_Percentage_BC & D_Percentage_BC < y)
+    total_undervote <- sum(this_election_filter$Undervotes)
+
+  } else {
+    this_party_df <- r_election_merge
+    this_percent <- "R_Percentage_BC"
+  }
+  
+  
+}
+
+d70_under <- calc_undervote_sub("d", 0.70, 1.00)
+
+d65_under <- calc_undervote_sub("d", 0.65, 0.70)
+
+d60_under <- calc_undervote_sub("d", 0.6, 0.65)
+
+d55_under <- calc_undervote_sub("d", 0.55, 0.6)
+
+d50_under <- calc_undervote_sub("d", 0.5, 0.55)
+
+r70_under <- calc_undervote_sub("r", 0.70, 1.00)
+
+r65_under <- calc_undervote_sub("r", 0.65, 0.70)
+
+r60_under <- calc_undervote_sub("r", 0.6, 0.65)
+
+r55_under <- calc_undervote_sub("r", 0.55, 0.6)
+
+r50_under <- calc_undervote_sub("r", 0.5, 0.55)
+
+
+
+#r75 <- election_merge %>%
+ # filter(R_MOV_BC >= 75)
+
+total_registered_voters <- sum(election_merge$Total_Voters)
+
+total_election_votes <- sum(election_merge$Ballots_Cast)
+
+precincts_reporting <- as.numeric(nrow(election_merge))
+
+election_overview <- data.frame("Total_Registered_Voters" = total_registered_voters, "Total_Ballots_Cast" = total_election_votes, "Voter_Turnout" = round(total_election_votes/total_registered_voters, 4), "Precincts Total" = precincts_reporting)
+
+tallies <- function(this_race, this_election_df) {
+  
+  this_total_votes <- sum(this_election_df[,12]) + sum(this_election_df[,17]) + sum(this_election_df[,22])
+  
+  this_total_undervote <- sum(this_election_df$Undervotes)
+  
+  this_total_overvote <- sum(this_election_df$Overvotes)
+  
+  this_rep_margin <- sum(this_election_df[,12]) - sum(this_election_df[,17])
+  
+  this_tallies <- data.frame("Race" = this_race, "Total_Undervotes" = this_total_undervote, "Percent_Undervotes" = round(this_total_undervote/total_election_votes, 4), "Total_Overvote" = this_total_overvote, "Republican" = sum(this_election_df[,12]), "Republican_Percent" = round(sum(this_election_df[,12])/total_election_votes, 4), "Democratic" = sum(this_election_df[,17]), "Democratic_Percent" = round(sum(this_election_df[,17])/total_election_votes, 4), "Libertarian" = sum(this_election_df[,22]), "Libertarian_Percent" = round(sum(this_election_df[,22])/total_election_votes,4), "Republican Margin" = this_rep_margin, "Difference Between Libertarian and the Margin" = sum(this_election_df[,22]) - abs(this_rep_margin) )
+}
+
+pres_totals <- tallies("Presidential", election_merge)
+
+# Load the Perdue senate race data.
+
+load(file="sen1_data.Rdata")
+
+senate1_totals <- tallies("Senate - Perdue", senate1_merge)
+
+election_totals <- rbind(pres_totals, senate1_totals)
+
+diff_between_r_pres_sen <- pres_totals[,5] - senate1_totals[,5]
+
+diff_between_d_pres_sen <- pres_totals[,7] - senate1_totals[,7]
+
+diff_between_l_pres_sen <- pres_totals[,9] - senate1_totals[,9]
+
+diff_between_undervotes_pres_sen <- pres_totals[,2] - senate1_totals[,2]
+
+# Write select tables to csv. Some of these are too long to use and will need a little reformatting.
+
+write.csv(election_totals, "output/election_totals.csv")
+write.csv(pres_totals, "output/pres_totals.csv")
+write.csv(election_overview, "output/election_overview.csv")
+```
+
+## Basic Election Stats
+
+`r kable(election_overview)`
+
+
+
+## Presidential Tallies
+
+`r kable(pres_totals)`
+
+## Senate Tallies Perdue
+
+`r kable(senate1_totals)`
+
+
+## Understand Precinct Size
+
+* 90th Percentile Precincts Total Voters: `r total_voters_90`
+* 95th Percentile Precincts Total Voters: `r total_voters_95`
+* 98th Percentile Precincts Total Voters: `r total_voters_98`
+* 99th Percentile Precincts Total Voters: `r total_voters_99`
+
+```{r bar_charts, echo=FALSE}
+
+total_pres_votes <- pres_totals$Republican + pres_totals$Democratic + pres_totals$Libertarian
+
+# Manually enter totals from the presidential recount. (Due to time constraints, pulling the xml is not feasible.) Source: https://results.enr.clarityelections.com/GA/107231/web.264614/#/summary
+
+recount_rep <- 2461854
+recount_dem <- 2473633
+recount_lib <- 62229
+
+total_recount_votes <- recount_rep + recount_dem + recount_lib
+
+final_chart_row <- data.frame("Category" = c("Registered Voters", "Ballots Cast", "Republican Votes", "Democratic Votes", "Libertarian Votes"), "Total" = c(total_registered_voters, total_election_votes, pres_totals$Republican, pres_totals$Democratic, pres_totals$Libertarian ))
+
+#final_chart_row <- data.frame("Category" = c("Registered Voters", "Ballots Cast", "Republican Votes", "Democratic Votes", "Libertarian Votes"), "Total" = c(total_registered_voters, total_recount_votes, recount_rep, recount_dem, recount_lib ))
+
+final_chart_row <- final_chart_row %>%
+  mutate(Category=fct_relevel(Category, "Registered Voters", "Ballots Cast", "Republican Votes", "Democratic Votes", "Libertarian Votes")) %>%
+  mutate("Race" = "Presidential", "Percent Registered" = Total/Total[[1]], "Percent Ballots" = Total/Total[[2]])
+
+final_chart_row$`Percent Ballots`[final_chart_row$`Percent Ballots` > 1] <- NA
+
+final_unlikely <- final_chart_row$Total[1] - final_chart_row$Total[2]
+
+final_chart_row$Chart <- c(final_unlikely, 0, final_chart_row$Total[3], final_chart_row$Total[4], final_chart_row$Total[5])
+
+# Create Labels
+
+label_reg_voter <- paste("Registered Nonvoters\n",(percent(round(final_chart_row$`Percent Registered`[1] - final_chart_row$`Percent Registered`[2], 4))), "\n", format(final_chart_row$Chart[1], big.mark=","), sep="")
+label_r_voter <- paste("Trump (R)\n", percent(round(final_chart_row$`Percent Registered`[3], 4), accuracy=0.01), "\n", format(final_chart_row$Total[3], big.mark=","), sep="")
+label_d_voter <- paste("Biden (D)\n", percent(round(final_chart_row$`Percent Registered`[4], 4), accuracy=0.01), "\n", format(final_chart_row$Total[4], big.mark=","), sep="")
+label_l_voter <- paste("Jorgensen (L)\n", percent(round(final_chart_row$`Percent Registered`[5], 4), accuracy=0.01), "\n", format(final_chart_row$Total[5], big.mark=","), sep="")
+
+final_chart_row$Labels <- c(label_reg_voter, 0, label_r_voter, label_d_voter, NA)
+
+final_percent_ballots <- final_chart_row %>%
+  drop_na("Percent Ballots")
+
+final_chart_row <- final_chart_row[-c(2),]
+
+stacked_bar <- function(df, colors, this_title, this_l_label) {
+  stacked_bar <- ggplot(df, aes(y=Chart, x=Race)) +
+  geom_col(aes(fill=Category), width=0.6) +
+  geom_bar(position="fill", stat="identity") +
+  scale_fill_manual(values=colors) +
+  coord_flip() +
+  theme_void() +
+  geom_text(aes(label = Labels, group=Category), position=position_stack(vjust=0.5), size=5, family="Noto Sans",  fontface="bold", color ="white") +
+  annotate("text", x=0.55, y=0, label=this_l_label, family="Noto Sans") +
+  labs(title = "Georgia General Election 2020", subtitle=this_title) +
+  theme(legend.position="none",
+        plot.title = element_text(hjust = 0.5, size = 20, family="Noto Sans"),
+        plot.subtitle = element_text(hjust = 0.5, size = 15, color="gray30", vjust = -1, face="italic", family="Noto Sans")
+        )
+}
+
+final_all_colors <- c("#666666", "red3", "blue3", "green3")
+
+final_all <- stacked_bar(final_chart_row, final_all_colors, "Presidential - Certified Vote", label_l_voter)
+
+
+ggsave("output/final_all_stacked_bar_ga.png", final_all, width = 14, height=3.1, units="in")
+
+final_pres_row <- final_chart_row
+final_pres_row <- final_pres_row[-c(1),]
+final_pres_row$Labels <- NULL
+final_pres_row$`Percent Registered` <- NULL
+final_pres_row$`Percent Ballots` <- NULL
+
+
+pres_label_r <- paste("Trump (R)\n", percent(round((final_pres_row$`Total`[1]/total_pres_votes), 4), accuracy=0.01), "\n", format(final_pres_row$Total[1], big.mark=","), sep="")
+pres_label_d <- paste("Biden (D)\n", percent(round((final_pres_row$`Total`[2]/total_pres_votes), 4), accuracy=0.01), "\n", format(final_pres_row$Total[2], big.mark=","), sep="")
+pres_label_l <- paste("Jorgensen (L)\n", percent(round((final_pres_row$`Total`[3]/total_pres_votes), 4), accuracy=0.01), "\n", format(final_pres_row$Total[3], big.mark=","), sep="")
+
+
+final_pres_row$Labels <- c(pres_label_r, pres_label_d, NA)
+
+final_pres_colors <- c("red3", "blue3", "green3")
+
+final_pres <- stacked_bar(final_pres_row, final_pres_colors, "Presidential - Certified Vote", pres_label_l)
+
+ggsave("output/final_pres_stacked_bar_ga.png", final_pres, width = 14, height=3.1, units="in")
+
+```
+
